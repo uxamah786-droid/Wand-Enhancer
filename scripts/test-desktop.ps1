@@ -128,11 +128,11 @@ try {
         $sha = [Security.Cryptography.SHA256]::Create()
         try { $expectedHash = ([BitConverter]::ToString($sha.ComputeHash($headerBytes))).Replace('-', '').ToLowerInvariant() }
         finally { $sha.Dispose() }
-        Assert-Equal ($integrityPatch.Invoke($null, @($integrityExe, $integrityAsar, $logger))) $true 'Integrity resource update'
+        Assert-Equal ($integrityPatch.Invoke($null, [object[]]@([string]$integrityExe, [string]$integrityAsar, $logger))) $true 'Integrity resource update'
         Assert-Equal ([IO.File]::ReadAllText($integrityExe).Substring($prefix.Length, 64)) $expectedHash 'Archive hash follows patch and restoration'
     }
     [IO.File]::WriteAllText($integrityExe, 'older build without resource')
-    Assert-Equal ($integrityPatch.Invoke($null, @($integrityExe, (Join-Path $scratch 'missing.asar'), $logger))) $false 'Older executable skips absent integrity resource'
+    Assert-Equal ($integrityPatch.Invoke($null, [object[]]@([string]$integrityExe, [string](Join-Path $scratch 'missing.asar'), $logger))) $false 'Older executable skips absent integrity resource'
     Write-Host 'Desktop regression checks passed (native sizes, backups, rollback, retry state, restore).'
 }
 finally {
