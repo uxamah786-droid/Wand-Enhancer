@@ -112,6 +112,27 @@ try {
     }
     Assert-Equal ([IO.File]::ReadAllText((Join-Path $scratch 'FixtureClient.exe'))) 'original launcher' 'Restore launcher'
     Assert-Equal ($isPatched.Invoke($null, $installArgument)) $false 'Restored installation'
+    # Exercise the archive-hash update used both by patching and by Restore.
+    $integrityType = $assembly.GetType('WandEnhancer.Core.Patching.Strategies.Static.AsarIntegrityResourcePatch', $true)
+    $integrityPatch = $integrityType.GetMethod('Patch')
+    $integrityExe = Join-Path $scratch 'integrity-fixture.exe'
+    $integrityAsar = Join-Path $scratch 'integrity-fixture.asar'
+    $anchor = '"file":"resources\\app.asar","alg":"SHA256","value":"'
+    $prefix = 'fixture ' + $anchor
+    [IO.File]::WriteAllText($integrityExe, $prefix + ('0' * 64) + '"}', [Text.Encoding]::ASCII)
+    foreach ($headerText in '{"files":{}}', '{"files":{"changed":{}}}', '{"files":{}}') {
+        $headerBytes = [Text.Encoding]::UTF8.GetBytes($headerText)
+        $payload = 8 + $headerBytes.Length
+        $archiveBytes = [byte[]]([BitConverter]::GetBytes([uint32]4) + [BitConverter]::GetBytes([uint32]$payload) + [BitConverter]::GetBytes([uint32]($payload - 4)) + [BitConverter]::GetBytes([uint32]$headerBytes.Length) + $headerBytes)
+        [IO.File]::WriteAllBytes($integrityAsar, $archiveBytes)
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $expectedHash = ([BitConverter]::ToString($sha.ComputeHash($headerBytes))).Replace('-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+        Assert-Equal ($integrityPatch.Invoke($null, @($integrityExe, $integrityAsar, $logger))) $true 'Integrity resource update'
+        Assert-Equal ([IO.File]::ReadAllText($integrityExe).Substring($prefix.Length, 64)) $expectedHash 'Archive hash follows patch and restoration'
+    }
+    [IO.File]::WriteAllText($integrityExe, 'older build without resource')
+    Assert-Equal ($integrityPatch.Invoke($null, @($integrityExe, (Join-Path $scratch 'missing.asar'), $logger))) $false 'Older executable skips absent integrity resource'
     Write-Host 'Desktop regression checks passed (native sizes, backups, rollback, retry state, restore).'
 }
 finally {
